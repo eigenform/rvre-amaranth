@@ -3,7 +3,7 @@ from nmigen import *
 from nmigen.sim import *
 from nmigen.hdl.rec import *
 
-from instruction import *
+from riscv.instruction import *
 
 class DecoderOutput(Record):
     """ Output control signals from an instruction decoder """
@@ -25,7 +25,9 @@ class DecoderOutput(Record):
         ])
 
 class Decoder(Elaboratable):
-    """ Instruction decoder """
+    """ Instruction decoder unit.
+    Decomposes a single instruction into a set of control signals.
+    """
     def __init__(self):
         self.out  = DecoderOutput()
         self.inst = Instruction()

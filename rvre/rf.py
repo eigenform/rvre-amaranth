@@ -3,7 +3,8 @@ from nmigen import *
 from nmigen.hdl.rec import *
 from nmigen.sim import *
 
-class RegisterFileInterface(Record):
+
+class RFInterface(Record):
     def __init__(self):
         super().__init__([
             # Register write enable/index/data
@@ -16,8 +17,10 @@ class RegisterFileInterface(Record):
         ])
 
 class RegisterFile(Elaboratable):
+    """ Architectural register file. 
+    """
     def __init__(self, init_data: list[int]=[]):
-        self.interface = RegisterFileInterface()
+        self.interface = RFInterface()
         self.mem = Memory(width=32, depth=32, init=init_data)
     def elaborate(self, platform):
         m = Module()
@@ -44,6 +47,7 @@ class RegisterFile(Elaboratable):
         ]
 
         return m
+
 
 def test():
     def rw_all():

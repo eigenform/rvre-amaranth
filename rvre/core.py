@@ -4,6 +4,7 @@ from nmigen import *
 from .rf import *
 
 class RVRECore(Elaboratable):
+    """ RISC-V core """
     def __init__(self):
         pass
     def elaborate(self, platform):
