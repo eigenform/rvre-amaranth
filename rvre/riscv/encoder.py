@@ -1,44 +1,6 @@
 
-from instruction import *
-
-class Field:
-    """ Describes a bitfield within some instruction encoding """
-    def __init__(self, pos: int, length: int):
-        self.pos = pos
-        self.len = length
-        self.mask = 0x00000000
-        self.mask |= ((1 << length) - 1) << pos
-    def gen(self, val: int): 
-        return (val << self.pos) & self.mask
-
-# Map from instruction formats to sets of relevant bitfields
-FIELDS = {
-    InstFormat.R: { 
-        "op": Field(2, 5), "rd": Field(7, 5), "f3": Field(12,3), 
-        "rs1": Field(15, 5), "rs2": Field(20, 5), "f7": Field(25, 7),
-    },
-    InstFormat.I: { 
-        "op": Field(2, 5), "rd": Field(7, 5), "f3": Field(12, 3), 
-        "rs1": Field(15, 5), "imm12": Field(20, 12), 
-    },
-    InstFormat.S: { 
-        "op": Field(2,5), "imm_4_0": Field(7,5), "f3": Field(12,3), 
-        "rs1": Field(15,5), "rs2": Field(20,5), "imm_11_5": Field(25,7),
-    },
-    InstFormat.B: { 
-        "op": Field(2,5), "imm_11": Field(7,1), "imm_4_1": Field(8,4), 
-        "f3": Field(12,3), "rs1": Field(15,5), "rs2": Field(20,5), 
-        "imm_10_5": Field(25,6), "imm_12": Field(31,1),
-    },
-    InstFormat.U: { 
-        "op": Field(2,5), "rd": Field(7,5), "imm20": Field(12,20), 
-    },
-    InstFormat.J: { 
-        "op": Field(2,5), "rd": Field(7,5), "imm_19_12": Field(12,8), 
-        "imm_11": Field(20,1), "imm_10_1": Field(21,10), 
-        "imm_20": Field(31,1),
-    },
-}
+from .instruction import *
+from ctypes import c_uint32
 
 # Map from base opcodes to different instruction formats
 OP_FORMATS = {
@@ -59,27 +21,10 @@ OP_FORMATS = {
 class Instr:
     """ Representing a particular RISC-V instruction """
     def __init__(self, op, f3=None, f7=None):
-        self.op = op
-        self.f3 = f3
-        self.f7 = f7
+        self.op = op.value
+        self.f3 = 0 if f3 == None else f3
+        self.f7 = 0 if f7 == None else f7
         self.fmt = OP_FORMATS[op]
-
-    def encode(self, **kwargs):
-        """ Encode this instruction into a 32-bit unsigned integer """
-        res = 0x00000003
-        fields = FIELDS[self.fmt]
-        for (k, v) in kwargs.items():
-            if k in fields:
-                res |= fields[k].gen(v)
-                print(k, v)
-        for name in fields:
-            field = fields[name]
-            if name == "op":   res |= field.gen(self.op.value)
-            elif name == "f3": res |= field.gen(self.f3)
-            elif name == "f7": res |= field.gen(self.f7)
-            print(name, field)
-        print("{:08x}".format(res))
-
 
 # The set of valid RV32I encodings.
 RV32I = {
@@ -125,74 +70,138 @@ RV32I = {
     # ebreak ...
 }
 
-def gen_i_imm12(x: int) -> int:
-    if (x >= 0x800) or (x <= -0x800):
-        raise ValueError("Can't represent 0x{:0x} as 12-bit signed integer")
-    if x < 0:
-        res = (0b011111111111 & abs(x)) | 0b100000000000
-    else:
-        res = (0b011111111111 & x)
-    return res << 20
-
-def gen_s_imm12(x: int) -> int:
-    if (x >= 0x800) or (x <= -0x800):
-        raise ValueError("Can't represent 0x{:0x} as 12-bit signed integer")
-    if x < 0:
-        res = (0b011111111111 & abs(x)) | 0b100000000000
-    else:
-        res = (0b011111111111 & x)
-    lo = (res & 0b000000011111) << 7
-    hi = (res & 0b111111100000) << 20
-    return (lo | hi)
-
-def gen_u_imm20(x: int) -> int:
-    if (x < 0) or (x > 0xfffff):
-        raise ValueError("Can't represent 0x{:0x} as 20-bit unsigned integer")
-    return (x & 0xfffff) << 12 
-
-
-print("i {:032b}".format(gen_i_imm12(0x7ff)))
-print("i {:032b}".format(gen_i_imm12(-0x7ff)))
-print("s {:032b}".format(gen_s_imm12(0x7ff)))
-print("s {:032b}".format(gen_s_imm12(-0x7ff)))
-print("u {:032b}".format(gen_u_imm20(0xfffff)))
 
 def rv32i_asm(s: str):
-    """ Naive single-instruction assembler """
+    """ [Very] naive single-instruction assembler """
     arg = s.replace(",", "").split(" ")
     instr = RV32I.get(arg[0])
     if instr == None:
         raise ValueError("unimplemented/invalid instruction")
+
+    # As far as I'm concerned, the low two bits are always set
+    res = 0x00000003
+    res |= (instr.op) << 2
 
     if instr.fmt == InstFormat.R:
         if len(arg) != 4: raise ValueError("Invalid R-type operands")
         rd  = int(arg[1].replace("x", ""))
         rs1 = int(arg[2].replace("x", ""))
         rs2 = int(arg[3].replace("x", ""))
+
+        assert rd < 32 and rs1 < 32 and rs2 < 32
+
+        res |= rd << 7
+        res |= instr.f3 << 12
+        res |= rs1 << 15
+        res |= rs2 << 20
+        res |= instr.f7 << 25
+        return res
+
     elif instr.fmt == InstFormat.I:
         if len(arg) != 4: raise ValueError("Invalid I-type operands")
         rd  = int(arg[1].replace("x", ""))
         rs1 = int(arg[2].replace("x", ""))
         imm = int(arg[3], 16)
+
+        assert rd < 32 and rs1 < 32
+
+        imm = c_uint32(imm).value & 0xfff
+        res |= rd << 7
+        res |= instr.f3 << 12
+        res |= rs1 << 15
+        res |= imm << 20
+        return res
+
     elif instr.fmt == InstFormat.S:
         if len(arg) != 4: raise ValueError("Invalid S-type operands")
-        rs1_base = int(arg[1].replace("x", ""))
-        rs2_src  = int(arg[2].replace("x", ""))
-        imm      = int(arg[3], 16)
+        rs1 = int(arg[1].replace("x", "")) # base
+        rs2 = int(arg[2].replace("x", "")) # src (value)
+        imm = int(arg[3], 16)
+
+        assert rs1 < 32 and rs2 < 32
+
+        imm = c_uint32(imm).value & 0xfff
+        imm_11_5 = (imm & 0b111111100000) >> 5
+        imm_4_0  = (imm & 0b000000011111)
+        res |= imm_4_0 << 7
+        res |= instr.f3 << 12
+        res |= rs1 << 15
+        res |= rs2 << 20
+        res |= imm_11_5 << 25
+        return res
+
     elif instr.fmt == InstFormat.U:
         if len(arg) != 3: raise ValueError("Invalid U-type operands")
         rd  = int(arg[1].replace("x", ""))
         imm = int(arg[2], 16)
+
+        assert rd < 32
+
+        imm = c_uint32(imm).value & 0xfffff
+        res |= rd << 7
+        res |= imm << 12
+        return res
+
     elif instr.fmt == InstFormat.J:
         if len(arg) != 4: raise ValueError("Invalid J-type operands")
         rd  = int(arg[1].replace("x", ""))
         imm = int(arg[2], 16)
 
-if __name__ == "__main__":
-    rv32i_asm("lui x1, 0xfffff")
-    rv32i_asm("add x1, x2, x3")
-    rv32i_asm("sw x1, x2, 0x4")
-    rv32i_asm("lw x1, x2, 0x4")
+        assert rd < 32
+
+        imm = c_uint32(imm).value & 0xfffff
+        imm_20    = (imm & 0b10000000000000000000) >> 19
+        imm_19_12 = (imm & 0b01111111100000000000) >> 11
+        imm_11    = (imm & 0b00000000010000000000) >> 10
+        imm_10_1  = (imm & 0b00000000001111111111)
+        res |= rd << 7
+        res |= imm_19_12 << 12
+        res |= imm_11 << 20
+        res |= imm_10_1 << 21
+        res |= imm_20 << 31
+        return res
+
+    elif instr.fmt == InstFormat.B:
+        if len(arg) != 4: raise ValueError("Invalid B-type operands")
+        rs1  = int(arg[1].replace("x", ""))
+        rs2  = int(arg[2].replace("x", ""))
+        imm  = int(arg[3], 16)
+
+        assert rs1 < 32 and rs2 < 32
+
+        imm = c_uint32(imm).value & 0xfff
+        imm_12   = (imm & 0b100000000000) >> 11
+        imm_11   = (imm & 0b010000000000) >> 10
+        imm_10_5 = (imm & 0b001111110000) >> 4
+        imm_4_1  = (imm & 0b000000001111)
+        res |= imm_11 << 7
+        res |= imm_4_1 << 8
+        res |= instr.f3 << 12
+        res |= rs1 << 15
+        res |= rs2 << 20
+        res |= imm_10_5 << 25
+        res |= imm_12 << 31
+        return res
 
 
+#if __name__ == "__main__":
+#    # This makeshift assembler is always "inst [rd], [rs1], [rs2], [imm]"
+#    tests = [
+#        "lui x1, 0xfffff",
+#        "add x1, x2, x3",
+#        "sub x1, x2, x3",
+#        "lb x2, x1, 0x4",
+#        "lh x2, x1, 0x4",
+#        "lw x2, x1, 0x4",
+#        "sb x1, x2, 0x4",
+#        "sh x1, x2, 0x4",
+#        "sw x1, x2, 0x4",
+#        "addi x1, x2, 0x100",
+#        "addi x1, x2, -0x100",
+#    ]
+#
+#    for t in tests:
+#        res = rv32i_asm(t)
+#        print("{:08x} {}".format(res, t))
+#
 

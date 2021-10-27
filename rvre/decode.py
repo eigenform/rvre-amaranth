@@ -4,6 +4,7 @@ from nmigen.sim import *
 from nmigen.hdl.rec import *
 
 from riscv.instruction import *
+from riscv.encoder import *
 
 class DecoderOutput(Record):
     """ Output control signals from an instruction decoder """
@@ -48,9 +49,8 @@ class Decoder(Elaboratable):
 
 def test():
     INSTRS = [
-        0x00310833, # add x16, x2, x3
-        0x005208b3, # add x17, x4, x5
-        0x00730933, # add x18, x6, x7
+            rv32i_asm("add x16, x2, x3"),
+            rv32i_asm("sub x16, x2, x3"),
     ]
     def proc():
         for inst in INSTRS:
