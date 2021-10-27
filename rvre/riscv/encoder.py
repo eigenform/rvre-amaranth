@@ -14,12 +14,8 @@ class Field:
 # Map from instruction formats to sets of relevant bitfields
 FIELDS = {
     InstFormat.R: { 
-        "op": Field(2, 5), 
-        "rd": Field(7, 5), 
-        "f3": Field(12,3), 
-        "rs1": Field(15, 5), 
-        "rs2": Field(20, 5), 
-        "f7": Field(25, 7),
+        "op": Field(2, 5), "rd": Field(7, 5), "f3": Field(12,3), 
+        "rs1": Field(15, 5), "rs2": Field(20, 5), "f7": Field(25, 7),
     },
     InstFormat.I: { 
         "op": Field(2, 5), "rd": Field(7, 5), "f3": Field(12, 3), 
@@ -129,6 +125,37 @@ RV32I = {
     # ebreak ...
 }
 
+def gen_i_imm12(x: int) -> int:
+    if (x >= 0x800) or (x <= -0x800):
+        raise ValueError("Can't represent 0x{:0x} as 12-bit signed integer")
+    if x < 0:
+        res = (0b011111111111 & abs(x)) | 0b100000000000
+    else:
+        res = (0b011111111111 & x)
+    return res << 20
+
+def gen_s_imm12(x: int) -> int:
+    if (x >= 0x800) or (x <= -0x800):
+        raise ValueError("Can't represent 0x{:0x} as 12-bit signed integer")
+    if x < 0:
+        res = (0b011111111111 & abs(x)) | 0b100000000000
+    else:
+        res = (0b011111111111 & x)
+    lo = (res & 0b000000011111) << 7
+    hi = (res & 0b111111100000) << 20
+    return (lo | hi)
+
+def gen_u_imm20(x: int) -> int:
+    if (x < 0) or (x > 0xfffff):
+        raise ValueError("Can't represent 0x{:0x} as 20-bit unsigned integer")
+    return (x & 0xfffff) << 12 
+
+
+print("i {:032b}".format(gen_i_imm12(0x7ff)))
+print("i {:032b}".format(gen_i_imm12(-0x7ff)))
+print("s {:032b}".format(gen_s_imm12(0x7ff)))
+print("s {:032b}".format(gen_s_imm12(-0x7ff)))
+print("u {:032b}".format(gen_u_imm20(0xfffff)))
 
 def rv32i_asm(s: str):
     """ Naive single-instruction assembler """
