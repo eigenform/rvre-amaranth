@@ -3,3 +3,6 @@ __pycache__/
 *.gtkw
 *.vcd
 *.v
+
+target/
+*.lock
