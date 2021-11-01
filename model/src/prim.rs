@@ -4,19 +4,16 @@
 #[repr(transparent)]
 pub struct ArchReg(pub usize);
 
-/// A name/index for a micro-architectural register.
-//#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-//#[repr(transparent)]
-//pub struct PhysReg(pub usize);
 
 
-pub struct RingBuffer<E> where E: Clone + Copy {
+#[derive(Debug)]
+pub struct RingBuffer<E> where E: Clone + Copy + std::fmt::Debug {
     data: Vec<Option<E>>,
     head: usize,
     tail: usize,
     size: usize,
 }
-impl <E: Clone + Copy> RingBuffer<E> {
+impl <E: Clone + Copy + std::fmt::Debug> RingBuffer<E> {
     pub fn new(size: usize) -> Self {
         Self {
             size,
@@ -51,9 +48,13 @@ impl <E: Clone + Copy> RingBuffer<E> {
             Some((res, head))
         }
     }
-    pub fn get(&self, idx: usize) -> Option<E> {
+    pub fn get(&self, idx: usize) -> &Option<E> {
         assert!(idx < self.size - 1);
-        self.data[idx]
+        &self.data[idx]
+    }
+    pub fn get_mut(&mut self, idx: usize) -> &mut Option<E> {
+        assert!(idx < self.size - 1);
+        &mut self.data[idx]
     }
 }
 

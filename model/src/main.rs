@@ -36,57 +36,40 @@ fn main() {
 
     let mut next_inst: Opcode = rand::random();
 
-    for cycle in 0..32 {
+    let mut fetch_stall = false;
+    let mut sched_stall = false;
+
+    for cycle in 0..64 {
         println!("======== Cycle {:04} ========", cycle);
-        let mut fetch_stall = false;
 
-        // Complete any pending work in the functional units.
+        rob.print_status();
 
-        asu.execute();
-        lou.execute();
-        cru.execute();
-
-        // Wake up any instructions that are ready to be dispatched
-        // (consuming them from the reservation station slots).
-        //
-        // Then, dispatch operations to the functional units.
-
-        sch.print_status();
-        let dispatched = sched::dispatch(&mut sch, &rat, &rob);
-        println!("[dispatch] dispatching {} uops", dispatched.len());
-        for disp_op in dispatched.iter() {
-            match disp_op.uop {
-                FunctionalUnitOp::AddSub(_)  => asu.prepare(*disp_op),
-                FunctionalUnitOp::Logical(_) => lou.prepare(*disp_op),
-                FunctionalUnitOp::Compare(_) => cru.prepare(*disp_op),
-            };
-        }
-
-        // If the ROB or reservation stations are full, we cannot schedule
-        // this instruction, so we have to stall
-        if rob.data.is_full() || sch.is_full() {
-        }
+        // Fetch the next instruction
+        next_inst = rand::random();
+        fpc += 4;
 
         // Create a ROB entry for the next/current/newest instruction.
+        println!("[decode] pc={:08x} {:?}", fpc, next_inst);
         let rob_entry = match next_inst {
             Opcode::Op(rd, ..) | 
             Opcode::OpImm(rd, ..) => {
-                ROBEntry::new(fpc, StorageLoc::Reg(rd))
+                InFlightOp::new(fpc, StorageLoc::Reg(rd))
             },
             _ => unimplemented!(),
         };
 
         // Try to add this entry to the reorder buffer.
-        let stall = match rob.data.push(rob_entry) {
+        match rob.push(rob_entry.clone()) {
             // No space in the ROB, so we need to stall.
-            None => true,
-
-            Some(idx) => {
+            Err(e) => {
+                println!("No space in ROB {:?}", e);
+            },
+            Ok(rob_idx) => {
                 // Rename the destination register to the new ROB entry.
                 match rob_entry.dst {
                     StorageLoc::Reg(rd) => {
-                        rat[rd] = ArchRegValue::Name(idx);
-                        println!("[rename] mapped {:?} => p{}", rd, idx); 
+                        rat[rd] = ArchRegValue::Name(rob_idx);
+                        println!("[rename] mapped {:?} => p{}", rd, rob_idx); 
                     },
                     _ => unimplemented!(),
                 }
@@ -96,17 +79,15 @@ fn main() {
                     Opcode::Op(_, rs1, rs2, op) => {
                         let uop = op.to_uop();
                         ReservationEntry {
-                            uop, dst: rob_entry.dst, stalled: 0,
-                            op1: Operand::Reg(rs1),
-                            op2: Operand::Reg(rs2),
+                            uop, rob_idx, dst: rob_entry.dst, stalled: 0,
+                            op1: Operand::Reg(rs1), op2: Operand::Reg(rs2),
                         }
                     },
                     Opcode::OpImm(_, rs1, imm, op) => {
                         let uop = op.to_uop();
                         ReservationEntry {
-                            uop, dst: rob_entry.dst, stalled: 0,
-                            op1: Operand::Reg(rs1),
-                            op2: Operand::Imm(imm),
+                            uop, rob_idx, dst: rob_entry.dst, stalled: 0,
+                            op1: Operand::Reg(rs1), op2: Operand::Imm(imm),
                         }
                     },
                     _ => unimplemented!(),
@@ -117,28 +98,85 @@ fn main() {
                 match res {
                     Ok(idx) => {
                         println!("[sched] reserved in slot {}", idx);
-                        false
                     }
                     Err(_) => {
-                        unimplemented!("no free reservation slot, stall");
-                        true
+                        println!("[sched] no free reservation slot");
                     },
                 }
             }
-        };
+        }
+
+        // Wake up any instructions that are ready to be dispatched
+        // (consuming them from the reservation station slots).
+        //
+        // Then, dispatch operations to the functional units.
+
+        sch.print_status();
+        let mut dispatched = sched::dispatch(&mut sch, &rat, &rob);
+        println!("[dispatch] dispatching {} uops", dispatched.len());
+        for disp_op in dispatched.iter_mut() {
+            match disp_op.uop {
+                FunctionalUnitOp::AddSub(_)  => {
+                    if !asu.is_busy() {
+                        asu.prepare(disp_op);
+                    }
+                },
+                FunctionalUnitOp::Logical(_) => {
+                    if !lou.is_busy() {
+                        lou.prepare(disp_op);
+                    }
+                },
+                FunctionalUnitOp::Compare(_) => {
+                    if !cru.is_busy() {
+                        cru.prepare(disp_op);
+                    }
+                },
+            };
+        }
 
 
-        // 8. Increment program counter
-        fpc = fpc.wrapping_add(4);
+
+        // Execute any pending work in the execution units, then
+        // write back any results to the ROB
+
+        asu.execute();
+        lou.execute();
+        cru.execute();
+
+        match asu.complete() {
+            Some(op) => {
+                rob.complete(op);
+            },
+            None => {
+                println!("[complete] ASU couldn't complete");
+            },
+        }
+        match lou.complete() {
+            Some(op) => {
+                rob.complete(op);
+            },
+            None => {
+                println!("[complete] LOU couldn't complete");
+            },
+        }
+        match cru.complete() {
+            Some(op) => {
+                rob.complete(op);
+            },
+            None => {
+                println!("[complete] CRU couldn't complete");
+            },
+        }
+
+        // Retire a single instruction from the ROB
+        match rob.retire() {
+            Some(op) => { println!("[retire] {:?}", op); },
+            None => { println!("[retire] nothing to retire"); },
+        }
         println!("");
     }
 
 
 }
-
-
-
-
-
 
 

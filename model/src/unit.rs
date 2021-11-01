@@ -2,6 +2,7 @@
 
 use std::ops::{ BitOr, BitXor, BitAnd, Shr, Shl };
 use crate::sched::*;
+use crate::rob::*;
 
 /// Operations for an [AddSubUnit].
 #[derive(Debug, Copy, Clone)]
@@ -24,31 +25,36 @@ pub enum FunctionalUnitOp {
 }
 
 
-/// Common interface for an execution unit.
-pub trait FunctionalUnit {
-    fn new() -> Self;
+#[derive(Debug, Copy, Clone)]
+pub struct CompletedOp {
+    pub rob_idx: usize,
+    pub res: u32,
+}
 
+
+/// Common interface for an execution unit (EU).
+pub trait ExecutionUnit {
+    fn new() -> Self;
+    fn is_busy(&self) -> bool;
     /// Send some operation to this unit.
-    fn prepare(&mut self, op: DispatchedOp);
+    fn prepare(&mut self, op: &DispatchedOp);
     /// Perform the current operation, producing a result.
     fn execute(&mut self);
     /// Return the operation and result data, clearing the unit's state.
-    fn complete(&mut self) -> Option<u32>;
+    fn complete(&mut self) -> Option<DispatchedOp>;
 }
 
 pub struct AddSubUnit {
     pending: Option<DispatchedOp>,
-    result: Option<u32>,
 }
-impl FunctionalUnit for AddSubUnit {
-    fn new() -> Self { 
-        Self { pending: None, result: None } 
-    }
-    fn prepare(&mut self, op: DispatchedOp) {
-        *self = Self { pending: Some(op), result: None };
+impl ExecutionUnit for AddSubUnit {
+    fn new() -> Self { Self { pending: None } }
+    fn is_busy(&self) -> bool { self.pending.is_some() }
+    fn prepare(&mut self, op: &DispatchedOp) {
+        *self = Self { pending: Some(op.clone()) }
     }
     fn execute(&mut self) {
-        if let Some(ifo) = self.pending {
+        if let Some(ref mut ifo) = self.pending {
             let res = match ifo.uop {
                 FunctionalUnitOp::AddSub(op) => match op {
                     AddSubOp::Add => ifo.x.wrapping_add(ifo.y),
@@ -56,70 +62,90 @@ impl FunctionalUnit for AddSubUnit {
                 },
                 _ => unimplemented!(),
             };
-            self.result = Some(res);
+            ifo.res = Some(res);
             println!("[execute] ASU completed with {:08x}", res);
         } else {
             println!("[execute] ASU was empty");
         }
     }
-    fn complete(&mut self) -> Option<u32> {
-        let res = self.result.take();
-        self.pending = None;
-        res
+    fn complete(&mut self) -> Option<DispatchedOp> {
+        match &self.pending {
+            None => None,
+            Some(op) => {
+                if op.res.is_some() {
+                    self.pending.take()
+                } else {
+                    None
+                }
+            }
+        }
     }
 }
 
 pub struct LogicalOpUnit {
     pending: Option<DispatchedOp>,
-    result: Option<u32>,
 }
-impl FunctionalUnit for LogicalOpUnit {
-    fn new() -> Self { 
-        Self { pending: None, result: None } 
+impl ExecutionUnit for LogicalOpUnit {
+    fn new() -> Self { Self { pending: None } }
+    fn is_busy(&self) -> bool { self.pending.is_some() }
+    fn prepare(&mut self, op: &DispatchedOp) {
+        *self = Self { pending: Some(op.clone()) }
     }
-    fn prepare(&mut self, op: DispatchedOp) {
-        *self = Self { pending: Some(op), result: None };
-    }
+
     fn execute(&mut self) {
-        if let Some(ifo) = self.pending {
+        if let Some(ref mut ifo) = self.pending {
             let res = match ifo.uop {
                 FunctionalUnitOp::Logical(op) => match op {
                     LogicalOp::Xor => ifo.x.bitxor(ifo.y),
                     LogicalOp::Or  => ifo.x.bitor(ifo.y),
                     LogicalOp::And => ifo.x.bitand(ifo.y),
-                    LogicalOp::Sll => ifo.x.shl(ifo.y),
-                    LogicalOp::Srl => ifo.x.shr(ifo.y),
-                    LogicalOp::Sra => (ifo.x as i32).shr(ifo.y as i32) as u32,
+                    LogicalOp::Sll => ifo.x.checked_shl(ifo.y).unwrap_or(0),
+                    LogicalOp::Srl => ifo.x.checked_shr(ifo.y).unwrap_or(0),
+                    LogicalOp::Sra => {
+                        match ifo.x.checked_shr(ifo.y) {
+                            Some(res) => res,
+                            None => {
+                                println!("sra {:08x} << {}", ifo.x, ifo.y);
+                                0
+                            }
+                        }
+                    },
                 },
                 _ => unimplemented!(),
             };
-            self.result = Some(res);
+            ifo.res = Some(res);
             println!("[execute] LOU completed with {:08x}", res);
         } else {
             println!("[execute] LOU was empty");
         }
     }
-    fn complete(&mut self) -> Option<u32> {
-        let res = self.result.take();
-        self.pending = None;
-        res
+    fn complete(&mut self) -> Option<DispatchedOp> {
+        match &self.pending {
+            None => None,
+            Some(op) => {
+                if op.res.is_some() {
+                    self.pending.take()
+                } else {
+                    None
+                }
+            }
+        }
     }
-
 }
 
 pub struct ComparatorUnit {
     pending: Option<DispatchedOp>,
-    result: Option<u32>,
 }
-impl FunctionalUnit for ComparatorUnit {
-    fn new() -> Self { 
-        Self { pending: None, result: None } 
+impl ExecutionUnit for ComparatorUnit {
+    fn new() -> Self { Self { pending: None } }
+    fn is_busy(&self) -> bool { self.pending.is_some() }
+    fn prepare(&mut self, op: &DispatchedOp) {
+        *self = Self { pending: Some(op.clone()) }
     }
-    fn prepare(&mut self, op: DispatchedOp) {
-        *self = Self { pending: Some(op), result: None };
-    }
+
+
     fn execute(&mut self) {
-        if let Some(ifo) = self.pending {
+        if let Some(ref mut ifo) = self.pending {
             let res = match ifo.uop {
                 FunctionalUnitOp::Compare(op) => match op {
                     CompareOp::LtSigned  => {
@@ -131,16 +157,23 @@ impl FunctionalUnit for ComparatorUnit {
                 },
                 _ => unimplemented!(),
             };
-            self.result = Some(res);
+            ifo.res = Some(res);
             println!("[execute] CRU completed with {:08x}", res);
         } else {
             println!("[execute] CRU was empty");
         }
     }
-    fn complete(&mut self) -> Option<u32> {
-        let res = self.result.take();
-        self.pending = None;
-        res
+    fn complete(&mut self) -> Option<DispatchedOp> {
+        match &self.pending {
+            None => None,
+            Some(op) => {
+                if op.res.is_some() {
+                    self.pending.take()
+                } else {
+                    None
+                }
+            }
+        }
     }
 
 }

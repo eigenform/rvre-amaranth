@@ -42,7 +42,7 @@ impl RegisterAliasTable {
         match self[r] {
             ArchRegValue::Valid(data) => Some(data),
             ArchRegValue::Name(rob_idx) => {
-                match rob.data.get(rob_idx) {
+                match rob.get(rob_idx) {
                     None => unimplemented!("invalid rob entry {:?}", rob_idx),
                     Some(rob_entry) => {
                         match rob_entry.result {

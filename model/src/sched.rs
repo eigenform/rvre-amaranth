@@ -23,10 +23,11 @@ impl Operand {
     }
 }
 
-#[derive(Debug, Copy, Clone)]
+#[derive(Debug, Clone)]
 pub struct ReservationEntry {
     pub uop: FunctionalUnitOp,
     pub dst: StorageLoc,
+    pub rob_idx: usize,
     pub op1:  Operand,
     pub op2:  Operand,
     pub stalled: usize,
@@ -37,18 +38,28 @@ impl ReservationEntry {
     {
         let data_x = self.op1.resolve(rat, rob);
         let data_y = self.op2.resolve(rat, rob);
-        match (data_x, data_y) {
-            (Some(x), Some(y)) => 
-                Some(DispatchedOp { uop: self.uop, dst: self.dst, x, y }),
-            (_, _) => None,
+
+        if data_x.is_some() && data_y.is_some() {
+            Some(DispatchedOp {
+                uop: self.uop,
+                dst: self.dst,
+                res: None,
+                rob_idx: self.rob_idx,
+                x: data_x.unwrap(),
+                y: data_y.unwrap(),
+            })
+        } else {
+            None
         }
     }
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone)]
 pub struct DispatchedOp {
     pub uop: FunctionalUnitOp,
     pub dst: StorageLoc,
+    pub res: Option<u32>,
+    pub rob_idx: usize,
     pub x: u32,
     pub y: u32,
 }
@@ -59,7 +70,7 @@ pub struct Scheduler {
 impl Scheduler {
     pub fn new() -> Self {
         Self {
-            slots: [None; 4],
+            slots: [None, None, None, None],
         }
     }
     pub fn is_full(&self) -> bool {
@@ -94,7 +105,7 @@ impl Scheduler {
     pub fn dispatch(&mut self, rat: &RegisterAliasTable, rob: &ReorderBuffer) {
         let mut res: Vec<DispatchedOp> = Vec::new();
         for slot in self.slots.iter_mut().filter(|x| x.is_some()) {
-            let mut entry  = slot.unwrap();
+            let mut entry  = slot.as_mut().unwrap();
             match entry.resolve(rat, rob) {
                 Some(op) => {
                     res.push(op);
@@ -114,7 +125,7 @@ pub fn dispatch(sch: &mut Scheduler, rat: &RegisterAliasTable,
 {
     let mut res: Vec<DispatchedOp> = Vec::new();
     for slot in sch.slots.iter_mut().filter(|x| x.is_some()) {
-        let entry  = slot.unwrap();
+        let entry  = slot.as_mut().unwrap();
         match entry.resolve(rat, rob) {
             Some(op) => {
                 res.push(op);
