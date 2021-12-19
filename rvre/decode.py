@@ -1,7 +1,7 @@
 
-from nmigen import *
-from nmigen.sim import *
-from nmigen.hdl.rec import *
+from amaranth import *
+from amaranth.sim import *
+from amaranth.hdl.rec import *
 
 from riscv.instruction import *
 from riscv.encoder import *
@@ -27,7 +27,7 @@ class DecoderOutput(Record):
 
 class Decoder(Elaboratable):
     """ Instruction decoder unit.
-    Decomposes a single instruction into a set of control signals.
+    Decomposes a single 32-bit instruction into a set of control signals.
     """
     def __init__(self):
         self.out  = DecoderOutput()

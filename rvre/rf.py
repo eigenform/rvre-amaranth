@@ -1,7 +1,7 @@
 
-from nmigen import *
-from nmigen.hdl.rec import *
-from nmigen.sim import *
+from amaranth import *
+from amaranth.hdl.rec import *
+from amaranth.sim import *
 
 
 class RFInterface(Record):

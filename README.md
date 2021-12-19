@@ -1,6 +1,6 @@
 # rvre 
 
-A RISC-V (RV32I) core implemented in [nMigen](https://github.com/nmigen/nmigen).
+A RISC-V (RV32I) core implemented with [Amaranth HDL](https://github.com/amaranth-lang/amaranth).
 
 ## Motivations
 

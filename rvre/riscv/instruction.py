@@ -1,7 +1,6 @@
 
-from nmigen import *
+from amaranth import *
 from enum import Enum
-
 
 class Instruction(Signal):
     """ Wrapper for slicing a 32-bit RISC-V instruction """

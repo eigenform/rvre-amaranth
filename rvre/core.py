@@ -1,5 +1,5 @@
 
-from nmigen import *
+from amaranth import *
 
 from .rf import *
 
