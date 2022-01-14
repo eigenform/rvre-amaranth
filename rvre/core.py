@@ -8,7 +8,7 @@ from functools import reduce
 from itertools import starmap
 from operator import or_
 
-from .pipeline import *
+from .common import *
 from .fetch import *
 from .decode import *
 from .issue import *
@@ -18,19 +18,6 @@ from .alu import *
 from .lsu import *
 from .bru import *
 
-class Uop(Layout):
-    """ Internal representation of an instruction (post-rename).
-    """
-    def __init__(self):
-        super().__init__([
-            ('rd',  5),
-            ('prd', 6), 
-            ('ps1', 6), 
-            ('ps2', 6),
-            ('alu_op', ALUOp), 
-            ('lsu_op', LSUOp),
-            ('bru_op', BRUOp),
-        ])
 
 FMT_RD  = (InstFormat.R, InstFormat.I, InstFormat.U, InstFormat.J)
 FMT_RS1 = (InstFormat.R, InstFormat.I, InstFormat.S, InstFormat.B)
@@ -84,9 +71,9 @@ class RVRECore(Elaboratable):
         ]
 
         # Get the physical registers mapped to RS1/RS2.
-        pd  = Signal(range(self.PHYS_REGS))
-        ps1 = Signal(range(self.PHYS_REGS))
-        ps2 = Signal(range(self.PHYS_REGS))
+        pd  = Signal(PhysReg)
+        ps1 = Signal(PhysReg)
+        ps2 = Signal(PhysReg)
         m.d.comb += [
             rat.rp1.en.eq(rs1_en),
             rat.rp2.en.eq(rs2_en),

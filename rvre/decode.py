@@ -3,12 +3,7 @@ from amaranth import *
 from amaranth.sim import *
 from amaranth.hdl.rec import *
 
-from .riscv.instruction import *
-from .alu import ALUOp
-from .lsu import LSUOp
-from .bru import BRUOp
-
-from enum import Enum
+from .common import *
 
 class Decoder(Elaboratable):
     """ Instruction decoder unit.

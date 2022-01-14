@@ -6,20 +6,7 @@ from amaranth import *
 from amaranth.sim import *
 from enum import Enum, unique
 
-@unique
-class ALUOp(Enum):
-    """ An ALU operation; formed by concatenating funct3 with funct7[1]. """
-    ADD  = 0b0000
-    SUB  = 0b0001
-    SLL  = 0b0010
-    SLT  = 0b0100
-    SLTU = 0b0110
-    XOR  = 0b1000
-    SRL  = 0b1010
-    SRA  = 0b1011
-    OR   = 0b1100
-    AND  = 0b1110
-
+from .common import ALUOp
 
 class ALU(Elaboratable):
     """ Arithmetic/logic unit """
