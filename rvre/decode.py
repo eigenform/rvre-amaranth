@@ -3,74 +3,134 @@ from amaranth import *
 from amaranth.sim import *
 from amaranth.hdl.rec import *
 
-from riscv.instruction import *
-from riscv.encoder import *
+from .riscv.instruction import *
+from .alu import ALUOp
+from .lsu import LSUOp
+from .bru import BRUOp
 
-class DecoderOutput(Record):
-    """ Output control signals from an instruction decoder """
-    def __init__(self):
-        super().__init__([
-            # Instruction operands
-            ("rd", 5, DIR_FANOUT), # Output dest. register
-            ("rs1", 5, DIR_FANOUT), # Output src. register #1
-            ("rs2", 5, DIR_FANOUT), # Output src. register #2
-            ("imm", 32, DIR_FANOUT), # Output 32-bit signed immediate
-
-            # Opcode/function control signals
-            ("opcd", 5, DIR_FANOUT),
-            ("funct3", 3, DIR_FANOUT),
-            ("funct7", 7, DIR_FANOUT),
-
-            # Register file write-enable
-            #("rf_we", 1, DIR_FANOUT),
-        ])
+from enum import Enum
 
 class Decoder(Elaboratable):
     """ Instruction decoder unit.
-    Decomposes a single 32-bit instruction into a set of control signals.
+    Decompose a 32-bit instruction into some set of control signals.
     """
     def __init__(self):
-        self.out  = DecoderOutput()
-        self.inst = Instruction()
-        pass
+        self.i_inst    = Instruction()
+        self.o_illegal = Signal()
+        self.o_op      = Signal(Opcode)
+        self.o_alu_op  = Signal(ALUOp)
+        self.o_lsu_op  = Signal(LSUOp)
+        self.o_bru_op  = Signal(BRUOp)
+        self.o_ifmt    = Signal(InstFormat)
+        self.o_rd      = Signal(5)
+        self.o_rs1     = Signal(5)
+        self.o_rs2     = Signal(5)
+        self.o_imm     = Signal(32)
+
+    def ports(self):
+        return [ 
+            self.i_inst,
+            self.o_illegal,
+            self.o_op,
+            self.o_alu_op,
+            self.o_lsu_op,
+            self.o_bru_op,
+            self.o_ifmt,
+            self.o_rd,
+            self.o_rs1,
+            self.o_rs2,
+            self.o_imm
+        ]
+
     def elaborate(self, platform):
         m = Module()
+
+        op = Signal(Opcode)
+        ifmt = Signal(InstFormat)
+        f3 = Signal(3)
+        f7 = Signal(7)
+        st_op = Signal()
+
         m.d.comb += [
-            # Register operands
-            self.out.rs1.eq(self.inst.rs1()),
-            self.out.rs2.eq(self.inst.rs2()),
-            self.out.rd.eq(self.inst.rd()),
-            # Opcode/function
-            self.out.opcd.eq(self.inst.opcode()),
-            self.out.funct3.eq(self.inst.funct3()),
-            self.out.funct7.eq(self.inst.funct7()),
+            op.eq(self.i_inst.op()),
+            f3.eq(self.i_inst.f3()),
+            f7.eq(self.i_inst.f7()),
+            st_op.eq(op == Opcode.STORE),
         ]
+
+        with m.Switch(op):
+            with m.Case(Opcode.LOAD):
+                m.d.comb += [ 
+                    ifmt.eq(InstFormat.I),
+                    self.o_alu_op.eq(ALUOp.ADD) 
+                ]
+            with m.Case(Opcode.OP_IMM):
+                m.d.comb += [ 
+                    ifmt.eq(InstFormat.I),
+                    self.o_alu_op.eq(Cat(f3, f7[1]))
+                ]
+            with m.Case(Opcode.AUIPC):
+                m.d.comb += [ 
+                    ifmt.eq(InstFormat.U),
+                    self.o_alu_op.eq(ALUOp.ADD) 
+                ]
+            with m.Case(Opcode.STORE):
+                m.d.comb += [ 
+                    ifmt.eq(InstFormat.S),
+                    self.o_alu_op.eq(ALUOp.ADD)
+                ]
+            with m.Case(Opcode.OP):
+                m.d.comb += [ 
+                    ifmt.eq(InstFormat.R),
+                    self.o_alu_op.eq(Cat(f3, f7[1]))
+                ]
+            with m.Case(Opcode.LUI):
+                m.d.comb += [ 
+                    ifmt.eq(InstFormat.U),
+                    self.o_alu_op.eq(ALUOp.ADD)
+                ]
+            with m.Case(Opcode.BRANCH):
+                m.d.comb += [ 
+                    ifmt.eq(InstFormat.B),
+                    #self.o_alu_op.eq(Cat(f3, f7[1]))
+                ]
+            with m.Case(Opcode.JALR):
+                m.d.comb += [ 
+                    ifmt.eq(InstFormat.I),
+                    self.o_alu_op.eq(ALUOp.ADD),
+                ]
+            with m.Case(Opcode.JAL):
+                m.d.comb += [ 
+                    ifmt.eq(InstFormat.J),
+                    self.o_alu_op.eq(ALUOp.ADD),
+                ]
+            with m.Default():
+                m.d.comb += [ 
+                    self.o_illegal.eq(1)
+                ]
+
+        with m.Switch(ifmt):
+            with m.Case(InstFormat.I):
+                m.d.comb += self.o_imm.eq(self.i_inst.i_simm12())
+            with m.Case(InstFormat.S):
+                m.d.comb += self.o_imm.eq(self.i_inst.s_simm12())
+            with m.Case(InstFormat.B):
+                m.d.comb += self.o_imm.eq(self.i_inst.b_simm12())
+            with m.Case(InstFormat.U):
+                m.d.comb += self.o_imm.eq(self.i_inst.u_imm20())
+            with m.Case(InstFormat.J):
+                m.d.comb += self.o_imm.eq(self.i_inst.j_simm20())
+
+        m.d.comb += [
+            self.o_op.eq(op),
+            self.o_ifmt.eq(ifmt),
+            self.o_lsu_op.eq( Cat(st_op, f3) ),
+            self.o_bru_op.eq(f3),
+            self.o_illegal.eq(self.i_inst[0:2] != 0b11),
+            self.o_rd.eq( self.i_inst.rd()),
+            self.o_rs1.eq(self.i_inst.rs1()),
+            self.o_rs2.eq(self.i_inst.rs2()),
+        ]
+
         return m
-
-def test():
-    INSTRS = [
-            rv32i_asm("add x16, x2, x3"),
-            rv32i_asm("sub x16, x2, x3"),
-    ]
-    def proc():
-        for inst in INSTRS:
-            yield dut.inst.eq(inst)
-            yield Settle()
-            rd  = yield dut.out.rd
-            rs1 = yield dut.out.rs1
-            rs2 = yield dut.out.rs2
-            opcd   = yield dut.out.opcd
-            funct3 = yield dut.out.funct3
-            funct7 = yield dut.out.funct7
-            print("rd=x{} rs1=x{} rs2=x{} opcd={} f3={:03b} f7={:07b}".format(
-                rd, rs1, rs2, Opcode(opcd).name, funct3, funct7))
-
-    dut = Decoder()
-    sim = Simulator(dut)
-    sim.add_process(proc)
-    sim.run()
-
-if __name__ == "__main__":
-    test()
-
 

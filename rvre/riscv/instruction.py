@@ -3,37 +3,37 @@ from amaranth import *
 from enum import Enum
 
 class Instruction(Signal):
-    """ Wrapper for slicing a 32-bit RISC-V instruction """
+    """ Wrapper for easily slicing a 32-bit RISC-V instruction. """
     def __init__(self):
         super().__init__(shape=unsigned(32))
 
-    def opcode(self): return self[2:7]
-    def funct3(self): return self[12:15]
-    def funct7(self): return self[25:32]
+    def op(self): return self[2:7]
+    def f3(self): return self[12:15]
+    def f7(self): return self[25:32]
 
     def rd(self):  return self[7:12]
     def rs1(self): return self[15:20]
     def rs2(self): return self[20:25]
 
     def i_simm12(self): 
-        return self[20:32]
+        return Cat(self[20:], Repl(self[-1], 20))
     def u_imm20(self):
-        return self[12:32]
+        return Cat(C(0, 12), self[12:])
     def s_simm12(self): 
-        return Cat(self[7:12], self[25:32])
+        return Cat(self[7:12], self[25:], Repl(self[-1], 20))
     def b_simm12(self): 
-        return Cat(0, self[8:12], self[25:31], self[7], self[31])
+        return Cat(C(0, 1), self[8:12], self[25:31], self[7], Repl(self[-1], 20))
     def j_simm20(self): 
-        return Cat(0, self[21:31], self[20], self[12:20], self[31])
+        return Cat(C(0, 1), self[21:31], self[20], self[12:20], Repl(self[-1], 12))
 
 class InstFormat(Enum):
-    """ RISC-V instruction encoding formats """
-    R = 0
-    I = 1
-    S = 2
-    B = 3
-    U = 4
-    J = 5
+    """ Constants for each RISC-V instruction format. """
+    R = 0 # rd, rs1, rs2
+    I = 1 # rd, rs1, imm
+    S = 2 # rs1, rs2, imm
+    B = 3 # rs1, rs2, imm
+    U = 4 # rd, imm
+    J = 5 # rd, imm
 
 class Opcode(Enum):
     """ RISC-V base opcode map """
