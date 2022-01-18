@@ -3,6 +3,7 @@
 
 from math import ceil, log2
 from enum import Enum, unique
+from abc import ABCMeta, abstractmethod
 
 from amaranth import *
 from amaranth.hdl.rec import *
@@ -145,15 +146,8 @@ class BRUOp(Enum):
     BLTU = 0b110
     BGEU = 0b111
 
-class PhysReg(Shape):
-    """ The shape of a physical register index. """
-    def __init__(self, **kwargs):
-        super().__init__(width=PARAM.prf_size, *kwargs)
-
-class ArchReg(Shape):
-    """ The shape of an architectural register index. """
-    def __init__(self, **kwargs):
-        super().__init__(width=ceil(log2(32)), *kwargs)
+PhysReg = ceil(log2(PARAM.prf_size))
+ArchReg = ceil(log2(PARAM.arf_size))
 
 class Uop(Layout):
     """ Internal representation of an instruction (post-rename).
@@ -164,6 +158,7 @@ class Uop(Layout):
             ('prd',    PhysReg), 
             ('ps1',    PhysReg), 
             ('ps2',    PhysReg),
+            ('op',     Opcode),
             ('alu_op', ALUOp), 
             ('lsu_op', LSUOp),
             ('bru_op', BRUOp),

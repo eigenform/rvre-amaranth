@@ -110,7 +110,7 @@ def test_decoder_from_rom():
             #    InstFormat(ifmt),
             #    rd, rs1, rs2, "{:08x}".format(imm)
             #))
-    dut = Decoder()
+    dut = DecodeUnit()
     sim = Simulator(dut)
     sim.add_process(proc)
     sim.run()
@@ -165,7 +165,8 @@ def test_core():
     sim = Simulator(dut)
     sim.add_clock(1e-6)
     sim.add_sync_process(proc)
-    sim.run()
+    with sim.write_vcd(vcd_file="/tmp/core.vcd", gtkw_file="/tmp/core.gtkw"):
+        sim.run()
 
 
 def dump_verilog():
@@ -173,9 +174,9 @@ def dump_verilog():
     #core_v = verilog.convert(core, ports=core.ports())
     #with open("/tmp/core.v", "w") as f: f.write(core_v)
 
-    dec = Decoder()
+    dec = DecodeUnit()
     decoder_v = verilog.convert(dec, ports=dec.ports())
-    with open("/tmp/decoder.v", "w") as f: f.write(decoder_v)
+    with open("/tmp/decodeunit.v", "w") as f: f.write(decoder_v)
 
     cam = CAM(32, 32)
     cam_v = verilog.convert(cam, ports=cam.ports())
@@ -189,7 +190,7 @@ if __name__ == "__main__":
     test_fetch_unit()
     test_alu()
     test_decoder_from_rom()
-    #test_core()
+    test_core()
 
     dump_verilog()
 

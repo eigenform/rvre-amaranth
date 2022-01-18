@@ -1,11 +1,20 @@
 
+from functools import reduce
+from itertools import starmap
+from operator import or_
+
 from amaranth import *
 from amaranth.sim import *
 from amaranth.hdl.rec import *
 
 from .common import *
 
-class Decoder(Elaboratable):
+FMT_RD  = (InstFormat.R, InstFormat.I, InstFormat.U, InstFormat.J)
+FMT_RS1 = (InstFormat.R, InstFormat.I, InstFormat.S, InstFormat.B)
+FMT_RS2 = (InstFormat.R, InstFormat.S, InstFormat.B)
+
+
+class DecodeUnit(Elaboratable):
     """ Instruction decoder unit.
     Decompose a 32-bit instruction into some set of control signals.
     """
@@ -17,9 +26,12 @@ class Decoder(Elaboratable):
         self.o_lsu_op  = Signal(LSUOp)
         self.o_bru_op  = Signal(BRUOp)
         self.o_ifmt    = Signal(InstFormat)
-        self.o_rd      = Signal(5)
-        self.o_rs1     = Signal(5)
-        self.o_rs2     = Signal(5)
+        self.o_rd      = Signal(ArchReg)
+        self.o_rs1     = Signal(ArchReg)
+        self.o_rs2     = Signal(ArchReg)
+        self.o_rd_en   = Signal()
+        self.o_rs1_en  = Signal()
+        self.o_rs2_en  = Signal()
         self.o_imm     = Signal(32)
 
     def ports(self):
@@ -34,6 +46,9 @@ class Decoder(Elaboratable):
             self.o_rd,
             self.o_rs1,
             self.o_rs2,
+            self.o_rd_en,
+            self.o_rs1_en,
+            self.o_rs2_en,
             self.o_imm
         ]
 
@@ -125,6 +140,10 @@ class Decoder(Elaboratable):
             self.o_rd.eq( self.i_inst.rd()),
             self.o_rs1.eq(self.i_inst.rs1()),
             self.o_rs2.eq(self.i_inst.rs2()),
+
+            self.o_rd_en.eq( reduce(or_, (ifmt == F for F in FMT_RD))),
+            self.o_rs1_en.eq(reduce(or_, (ifmt == F for F in FMT_RS1))),
+            self.o_rs2_en.eq(reduce(or_, (ifmt == F for F in FMT_RS2))),
         ]
 
         return m
